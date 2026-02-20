@@ -3,6 +3,9 @@
 Simple Next.js dashboard that lists all open pull requests across multiple
 GitHub organizations and multiple tokens.
 
+<img width="1512" height="858" alt="image" src="https://github.com/user-attachments/assets/f10a8440-82e9-4a40-8443-d494729ee402" />
+
+
 ## Features
 
 - Multi-account support (multiple GitHub tokens)
