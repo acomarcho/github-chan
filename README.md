@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GitHub Open PR Dashboard
 
-## Getting Started
+Simple Next.js dashboard that lists all open pull requests across multiple
+GitHub organizations and multiple PATs.
 
-First, run the development server:
+## Features
+
+- Multi-account support (multiple PAT tokens)
+- Organization-level filtering through config
+- Two views:
+  - All PRs
+  - Grouped by organization
+- Sort by:
+  - Newest
+  - Oldest
+
+## 1) Configure tokens
+
+Copy env example:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set token values in `.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+GITHUB_TOKEN_A=ghp_xxx
+GITHUB_TOKEN_B=ghp_yyy
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 2) Configure accounts/orgs
 
-## Learn More
+Copy example config:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cp github-dashboard.example.yml github-dashboard.yml
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Edit `github-dashboard.yml`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```yaml
+accounts:
+  - name: Personal
+    tokenEnv: GITHUB_TOKEN_A
+    organizations:
+      - organizationA
+      - organizationB
 
-## Deploy on Vercel
+  - name: Work
+    tokenEnv: GITHUB_TOKEN_B
+    organizations:
+      - organizationC
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Notes:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `tokenEnv` must match an env var name from `.env.local`.
+- Add/remove accounts by editing this YAML only.
+
+Optional custom config path:
+
+```bash
+GITHUB_DASHBOARD_CONFIG=./my-config.yml
+```
+
+## 3) Run
+
+```bash
+pnpm dev
+```
+
+Open `http://localhost:3000`.
+
+## Token permissions
+
+Your PAT needs read access to repositories and pull requests for the target orgs.
+If org SSO is enabled, authorize the token for that org.

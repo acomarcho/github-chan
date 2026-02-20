@@ -1,0 +1,11 @@
+accounts:
+  - name: Personal
+    tokenEnv: GITHUB_TOKEN_A
+    organizations:
+      - organizationA
+      - organizationB
+
+  - name: Work
+    tokenEnv: GITHUB_TOKEN_B
+    organizations:
+      - organizationC
