@@ -201,7 +201,7 @@ export async function fetchDashboardPullRequests(): Promise<PullRequestDashboard
     });
 
     const candidateRepos = repositories.filter(
-      (repo) => !repo.archived && repo.has_issues && repo.open_issues_count > 0,
+      (repo) => !repo.archived && repo.open_issues_count > 0,
     );
 
     const repoPullRequestBatches = await mapWithConcurrency(

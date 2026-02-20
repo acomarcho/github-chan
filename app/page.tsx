@@ -11,11 +11,13 @@ export const dynamic = "force-dynamic";
 type SortMode = "newest" | "oldest";
 type ViewMode = "all" | "org";
 type TabMode = "pulls" | "repos";
+const ITEMS_PER_PAGE = 10;
 
 type PageSearchParams = {
   sort?: string;
   view?: string;
   tab?: string;
+  page?: string;
 };
 
 type HomePageProps = {
@@ -32,6 +34,19 @@ function getViewMode(value: string | undefined): ViewMode {
 
 function getTabMode(value: string | undefined): TabMode {
   return value === "pulls" ? "pulls" : "repos";
+}
+
+function getPageNumber(value: string | undefined): number {
+  if (!value) {
+    return 1;
+  }
+
+  const page = Number.parseInt(value, 10);
+  if (!Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return page;
 }
 
 function sortPullRequests(
@@ -73,6 +88,37 @@ function groupByOrganization(
     },
     {},
   );
+}
+
+type PaginationResult<T> = {
+  items: T[];
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  startItem: number;
+  endItem: number;
+};
+
+function paginate<T>(
+  items: T[],
+  requestedPage: number,
+  pageSize: number,
+): PaginationResult<T> {
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = Math.min(Math.max(requestedPage, 1), totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndexExclusive = Math.min(startIndex + pageSize, totalItems);
+  const paginatedItems = items.slice(startIndex, endIndexExclusive);
+
+  return {
+    items: paginatedItems,
+    currentPage,
+    totalPages,
+    totalItems,
+    startItem: totalItems === 0 ? 0 : startIndex + 1,
+    endItem: endIndexExclusive,
+  };
 }
 
 function relativeAge(isoDate: string): string {
@@ -248,11 +294,57 @@ function RepositoryTable({
   );
 }
 
+function PaginationControls({
+  currentPage,
+  totalPages,
+  getPageHref,
+}: {
+  currentPage: number;
+  totalPages: number;
+  getPageHref: (page: number) => string;
+}) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  const previousPage = Math.max(1, currentPage - 1);
+  const nextPage = Math.min(totalPages, currentPage + 1);
+
+  return (
+    <div className="flex w-full flex-wrap items-center justify-end gap-2">
+      {currentPage > 1 ? (
+        <LinkPill href={getPageHref(previousPage)} active={false}>
+          Previous
+        </LinkPill>
+      ) : (
+        <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm text-slate-400">
+          Previous
+        </span>
+      )}
+
+      <span className="px-2 text-sm text-slate-600">
+        Page {currentPage} of {totalPages}
+      </span>
+
+      {currentPage < totalPages ? (
+        <LinkPill href={getPageHref(nextPage)} active={false}>
+          Next
+        </LinkPill>
+      ) : (
+        <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm text-slate-400">
+          Next
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default async function Home({ searchParams }: HomePageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const sortMode = getSortMode(resolvedSearchParams.sort);
   const viewMode = getViewMode(resolvedSearchParams.view);
   const tabMode = getTabMode(resolvedSearchParams.tab);
+  const requestedPage = getPageNumber(resolvedSearchParams.page);
 
   let dashboardData:
     | Awaited<ReturnType<typeof fetchDashboardPullRequests>>
@@ -271,8 +363,50 @@ export default async function Home({ searchParams }: HomePageProps) {
   const sortedRepositories = dashboardData
     ? sortRepositories(dashboardData.repositories)
     : [];
+  const pullPagination = paginate(
+    sortedPullRequests,
+    requestedPage,
+    ITEMS_PER_PAGE,
+  );
+  const repositoryPagination = paginate(
+    sortedRepositories,
+    requestedPage,
+    ITEMS_PER_PAGE,
+  );
+  const activePagination =
+    tabMode === "repos" ? repositoryPagination : pullPagination;
 
-  const grouped = groupByOrganization(sortedPullRequests);
+  const buildHref = ({
+    tab,
+    page,
+    view,
+    sort,
+  }: {
+    tab: TabMode;
+    page: number;
+    view: ViewMode;
+    sort: SortMode;
+  }) => {
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (tab === "pulls") {
+      params.set("view", view);
+      params.set("sort", sort);
+    }
+    if (page > 1) {
+      params.set("page", String(page));
+    }
+    return `/?${params.toString()}`;
+  };
+  const activePageHref = (page: number) =>
+    buildHref({
+      tab: tabMode,
+      view: viewMode,
+      sort: sortMode,
+      page,
+    });
+
+  const grouped = groupByOrganization(pullPagination.items);
   const groupedEntries = Object.entries(grouped).toSorted((a, b) =>
     a[0].localeCompare(b[0]),
   );
@@ -292,11 +426,24 @@ export default async function Home({ searchParams }: HomePageProps) {
             <span className="text-xs uppercase tracking-wide text-slate-500">
               Tab
             </span>
-            <LinkPill href="/?tab=repos" active={tabMode === "repos"}>
+            <LinkPill
+              href={buildHref({
+                tab: "repos",
+                view: viewMode,
+                sort: sortMode,
+                page: 1,
+              })}
+              active={tabMode === "repos"}
+            >
               Repositories
             </LinkPill>
             <LinkPill
-              href={`/?tab=pulls&view=${viewMode}&sort=${sortMode}`}
+              href={buildHref({
+                tab: "pulls",
+                view: viewMode,
+                sort: sortMode,
+                page: 1,
+              })}
               active={tabMode === "pulls"}
             >
               Pull Requests
@@ -308,13 +455,23 @@ export default async function Home({ searchParams }: HomePageProps) {
                   View
                 </span>
                 <LinkPill
-                  href={`/?tab=pulls&view=all&sort=${sortMode}`}
+                  href={buildHref({
+                    tab: "pulls",
+                    view: "all",
+                    sort: sortMode,
+                    page: 1,
+                  })}
                   active={viewMode === "all"}
                 >
                   All PRs
                 </LinkPill>
                 <LinkPill
-                  href={`/?tab=pulls&view=org&sort=${sortMode}`}
+                  href={buildHref({
+                    tab: "pulls",
+                    view: "org",
+                    sort: sortMode,
+                    page: 1,
+                  })}
                   active={viewMode === "org"}
                 >
                   Grouped by Org
@@ -324,13 +481,23 @@ export default async function Home({ searchParams }: HomePageProps) {
                   Sort
                 </span>
                 <LinkPill
-                  href={`/?tab=pulls&view=${viewMode}&sort=newest`}
+                  href={buildHref({
+                    tab: "pulls",
+                    view: viewMode,
+                    sort: "newest",
+                    page: 1,
+                  })}
                   active={sortMode === "newest"}
                 >
                   Newest
                 </LinkPill>
                 <LinkPill
-                  href={`/?tab=pulls&view=${viewMode}&sort=oldest`}
+                  href={buildHref({
+                    tab: "pulls",
+                    view: viewMode,
+                    sort: "oldest",
+                    page: 1,
+                  })}
                   active={sortMode === "oldest"}
                 >
                   Oldest
@@ -345,6 +512,10 @@ export default async function Home({ searchParams }: HomePageProps) {
                 Loaded <strong>{sortedRepositories.length}</strong> repositories
                 and <strong> {sortedPullRequests.length}</strong> open PRs from
                 config <code>{dashboardData.configPath}</code>.
+              </p>
+              <p className="mt-1">
+                Showing {activePagination.startItem}-{activePagination.endItem}{" "}
+                of {activePagination.totalItems} (10 per page).
               </p>
             </div>
           )}
@@ -375,7 +546,12 @@ export default async function Home({ searchParams }: HomePageProps) {
         {dashboardData && tabMode === "pulls" && viewMode === "all" && (
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold">All Open Pull Requests</h2>
-            <PullRequestTable pullRequests={sortedPullRequests} />
+            <PullRequestTable pullRequests={pullPagination.items} />
+            <PaginationControls
+              currentPage={pullPagination.currentPage}
+              totalPages={pullPagination.totalPages}
+              getPageHref={activePageHref}
+            />
           </section>
         )}
 
@@ -401,13 +577,23 @@ export default async function Home({ searchParams }: HomePageProps) {
                 <PullRequestTable pullRequests={pullRequests} />
               </article>
             ))}
+            <PaginationControls
+              currentPage={pullPagination.currentPage}
+              totalPages={pullPagination.totalPages}
+              getPageHref={activePageHref}
+            />
           </section>
         )}
 
         {dashboardData && tabMode === "repos" && (
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold">All Repositories</h2>
-            <RepositoryTable repositories={sortedRepositories} />
+            <RepositoryTable repositories={repositoryPagination.items} />
+            <PaginationControls
+              currentPage={repositoryPagination.currentPage}
+              totalPages={repositoryPagination.totalPages}
+              getPageHref={activePageHref}
+            />
           </section>
         )}
       </div>

@@ -10,6 +10,8 @@ GitHub organizations and multiple PATs.
 - Two tabs:
   - Pull Requests
   - Repositories
+- Pagination:
+  - 10 items per page
 - PR views:
   - All PRs
   - Grouped by organization
