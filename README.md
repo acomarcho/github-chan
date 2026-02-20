@@ -12,6 +12,7 @@ GitHub organizations and multiple tokens.
   - Repositories
 - Pagination:
   - 10 items per page
+  - Client-side pagination (no full page reload on page changes)
   - Per-organization pagination for grouped views
 - PR views:
   - All PRs
