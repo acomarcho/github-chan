@@ -11,18 +11,44 @@ export const dynamic = "force-dynamic";
 type SortMode = "newest" | "oldest";
 type ViewMode = "all" | "org";
 type TabMode = "pulls" | "repos";
+
 const ITEMS_PER_PAGE = 10;
 
 type PageSearchParams = {
-  sort?: string;
-  view?: string;
-  tab?: string;
-  page?: string;
+  sort?: string | string[];
+  view?: string | string[];
+  tab?: string | string[];
+  page?: string | string[];
+  [key: string]: string | string[] | undefined;
 };
 
 type HomePageProps = {
   searchParams?: Promise<PageSearchParams>;
 };
+
+type FlatSearchParams = Record<string, string>;
+
+type PaginationResult<T> = {
+  items: T[];
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  startItem: number;
+  endItem: number;
+};
+
+function toFlatSearchParams(params: PageSearchParams): FlatSearchParams {
+  const entries = Object.entries(params)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return [key, value[0] ?? ""] as const;
+      }
+      return [key, value ?? ""] as const;
+    })
+    .filter(([, value]) => value !== "");
+
+  return Object.fromEntries(entries);
+}
 
 function getSortMode(value: string | undefined): SortMode {
   return value === "oldest" ? "oldest" : "newest";
@@ -41,12 +67,22 @@ function getPageNumber(value: string | undefined): number {
     return 1;
   }
 
-  const page = Number.parseInt(value, 10);
-  if (!Number.isFinite(page) || page < 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
     return 1;
   }
 
-  return page;
+  return parsed;
+}
+
+function getGroupPageParamKey(prefix: "pull" | "repo", org: string): string {
+  const slug =
+    org
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "org";
+
+  return `${prefix}Page_${slug}`;
 }
 
 function sortPullRequests(
@@ -75,7 +111,7 @@ function sortRepositories(
   });
 }
 
-function groupByOrganization(
+function groupPullRequestsByOrganization(
   pullRequests: DashboardPullRequest[],
 ): Record<string, DashboardPullRequest[]> {
   return pullRequests.reduce<Record<string, DashboardPullRequest[]>>(
@@ -90,14 +126,20 @@ function groupByOrganization(
   );
 }
 
-type PaginationResult<T> = {
-  items: T[];
-  currentPage: number;
-  totalPages: number;
-  totalItems: number;
-  startItem: number;
-  endItem: number;
-};
+function groupRepositoriesByOrganization(
+  repositories: DashboardRepository[],
+): Record<string, DashboardRepository[]> {
+  return repositories.reduce<Record<string, DashboardRepository[]>>(
+    (groups, repository) => {
+      if (!groups[repository.organization]) {
+        groups[repository.organization] = [];
+      }
+      groups[repository.organization].push(repository);
+      return groups;
+    },
+    {},
+  );
+}
 
 function paginate<T>(
   items: T[],
@@ -109,10 +151,9 @@ function paginate<T>(
   const currentPage = Math.min(Math.max(requestedPage, 1), totalPages);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndexExclusive = Math.min(startIndex + pageSize, totalItems);
-  const paginatedItems = items.slice(startIndex, endIndexExclusive);
 
   return {
-    items: paginatedItems,
+    items: items.slice(startIndex, endIndexExclusive),
     currentPage,
     totalPages,
     totalItems,
@@ -129,10 +170,12 @@ function relativeAge(isoDate: string): string {
   if (hours < 24) {
     return `${hours}h`;
   }
+
   const days = Math.floor(hours / 24);
   if (days < 30) {
     return `${days}d`;
   }
+
   const months = Math.floor(days / 30);
   return `${months}mo`;
 }
@@ -341,10 +384,12 @@ function PaginationControls({
 
 export default async function Home({ searchParams }: HomePageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const sortMode = getSortMode(resolvedSearchParams.sort);
-  const viewMode = getViewMode(resolvedSearchParams.view);
-  const tabMode = getTabMode(resolvedSearchParams.tab);
-  const requestedPage = getPageNumber(resolvedSearchParams.page);
+  const flatSearchParams = toFlatSearchParams(resolvedSearchParams);
+
+  const sortMode = getSortMode(flatSearchParams.sort);
+  const viewMode = getViewMode(flatSearchParams.view);
+  const tabMode = getTabMode(flatSearchParams.tab);
+  const requestedPage = getPageNumber(flatSearchParams.page);
 
   let dashboardData:
     | Awaited<ReturnType<typeof fetchDashboardPullRequests>>
@@ -363,53 +408,38 @@ export default async function Home({ searchParams }: HomePageProps) {
   const sortedRepositories = dashboardData
     ? sortRepositories(dashboardData.repositories)
     : [];
-  const pullPagination = paginate(
-    sortedPullRequests,
-    requestedPage,
-    ITEMS_PER_PAGE,
-  );
-  const repositoryPagination = paginate(
-    sortedRepositories,
-    requestedPage,
-    ITEMS_PER_PAGE,
-  );
-  const activePagination =
-    tabMode === "repos" ? repositoryPagination : pullPagination;
 
-  const buildHref = ({
-    tab,
-    page,
-    view,
-    sort,
-  }: {
-    tab: TabMode;
-    page: number;
-    view: ViewMode;
-    sort: SortMode;
-  }) => {
-    const params = new URLSearchParams();
-    params.set("tab", tab);
-    if (tab === "pulls") {
-      params.set("view", view);
-      params.set("sort", sort);
-    }
-    if (page > 1) {
-      params.set("page", String(page));
-    }
-    return `/?${params.toString()}`;
-  };
-  const activePageHref = (page: number) =>
-    buildHref({
-      tab: tabMode,
-      view: viewMode,
-      sort: sortMode,
-      page,
+  const pullPagination = paginate(sortedPullRequests, requestedPage, ITEMS_PER_PAGE);
+  const groupedPullEntries = Object.entries(
+    groupPullRequestsByOrganization(sortedPullRequests),
+  ).toSorted((a, b) => a[0].localeCompare(b[0]));
+
+  const groupedRepositoryEntries = Object.entries(
+    groupRepositoriesByOrganization(sortedRepositories),
+  ).toSorted((a, b) => a[0].localeCompare(b[0]));
+
+  const buildHref = (updates: Record<string, string | undefined>) => {
+    const params = new URLSearchParams(flatSearchParams);
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === undefined) {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
     });
 
-  const grouped = groupByOrganization(pullPagination.items);
-  const groupedEntries = Object.entries(grouped).toSorted((a, b) =>
-    a[0].localeCompare(b[0]),
-  );
+    const query = params.toString();
+    return query ? `/?${query}` : "/";
+  };
+
+  const allPullPageHref = (page: number) =>
+    buildHref({
+      tab: "pulls",
+      view: "all",
+      sort: sortMode,
+      page: page > 1 ? String(page) : undefined,
+    });
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900 sm:px-8">
@@ -429,9 +459,9 @@ export default async function Home({ searchParams }: HomePageProps) {
             <LinkPill
               href={buildHref({
                 tab: "repos",
-                view: viewMode,
-                sort: sortMode,
-                page: 1,
+                view: undefined,
+                sort: undefined,
+                page: undefined,
               })}
               active={tabMode === "repos"}
             >
@@ -442,7 +472,6 @@ export default async function Home({ searchParams }: HomePageProps) {
                 tab: "pulls",
                 view: viewMode,
                 sort: sortMode,
-                page: 1,
               })}
               active={tabMode === "pulls"}
             >
@@ -459,7 +488,7 @@ export default async function Home({ searchParams }: HomePageProps) {
                     tab: "pulls",
                     view: "all",
                     sort: sortMode,
-                    page: 1,
+                    page: undefined,
                   })}
                   active={viewMode === "all"}
                 >
@@ -470,7 +499,7 @@ export default async function Home({ searchParams }: HomePageProps) {
                     tab: "pulls",
                     view: "org",
                     sort: sortMode,
-                    page: 1,
+                    page: undefined,
                   })}
                   active={viewMode === "org"}
                 >
@@ -485,7 +514,7 @@ export default async function Home({ searchParams }: HomePageProps) {
                     tab: "pulls",
                     view: viewMode,
                     sort: "newest",
-                    page: 1,
+                    page: undefined,
                   })}
                   active={sortMode === "newest"}
                 >
@@ -496,7 +525,7 @@ export default async function Home({ searchParams }: HomePageProps) {
                     tab: "pulls",
                     view: viewMode,
                     sort: "oldest",
-                    page: 1,
+                    page: undefined,
                   })}
                   active={sortMode === "oldest"}
                 >
@@ -512,10 +541,6 @@ export default async function Home({ searchParams }: HomePageProps) {
                 Loaded <strong>{sortedRepositories.length}</strong> repositories
                 and <strong> {sortedPullRequests.length}</strong> open PRs from
                 config <code>{dashboardData.configPath}</code>.
-              </p>
-              <p className="mt-1">
-                Showing {activePagination.startItem}-{activePagination.endItem}{" "}
-                of {activePagination.totalItems} (10 per page).
               </p>
             </div>
           )}
@@ -546,54 +571,119 @@ export default async function Home({ searchParams }: HomePageProps) {
         {dashboardData && tabMode === "pulls" && viewMode === "all" && (
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold">All Open Pull Requests</h2>
+            <p className="text-sm text-slate-600">
+              Showing {pullPagination.startItem}-{pullPagination.endItem} of{" "}
+              {pullPagination.totalItems}.
+            </p>
             <PullRequestTable pullRequests={pullPagination.items} />
             <PaginationControls
               currentPage={pullPagination.currentPage}
               totalPages={pullPagination.totalPages}
-              getPageHref={activePageHref}
+              getPageHref={allPullPageHref}
             />
           </section>
         )}
 
         {dashboardData && tabMode === "pulls" && viewMode === "org" && (
           <section className="flex flex-col gap-6">
-            {groupedEntries.length === 0 && (
+            {groupedPullEntries.length === 0 && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
                 No open pull requests.
               </div>
             )}
 
-            {groupedEntries.map(([organization, pullRequests]) => (
-              <article
-                key={organization}
-                className="flex flex-col gap-3 rounded-2xl"
-              >
-                <h2 className="text-lg font-semibold">
-                  {organization}{" "}
-                  <span className="text-sm font-normal text-slate-500">
-                    ({pullRequests.length})
-                  </span>
-                </h2>
-                <PullRequestTable pullRequests={pullRequests} />
-              </article>
-            ))}
-            <PaginationControls
-              currentPage={pullPagination.currentPage}
-              totalPages={pullPagination.totalPages}
-              getPageHref={activePageHref}
-            />
+            {groupedPullEntries.map(([organization, pullRequests]) => {
+              const pageParamKey = getGroupPageParamKey("pull", organization);
+              const pagination = paginate(
+                pullRequests,
+                getPageNumber(flatSearchParams[pageParamKey]),
+                ITEMS_PER_PAGE,
+              );
+              const getPageHref = (page: number) =>
+                buildHref({
+                  tab: "pulls",
+                  view: "org",
+                  sort: sortMode,
+                  page: undefined,
+                  [pageParamKey]: page > 1 ? String(page) : undefined,
+                });
+
+              return (
+                <article
+                  key={organization}
+                  className="flex flex-col gap-3 rounded-2xl"
+                >
+                  <h2 className="text-lg font-semibold">
+                    {organization}{" "}
+                    <span className="text-sm font-normal text-slate-500">
+                      ({pagination.totalItems})
+                    </span>
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    Showing {pagination.startItem}-{pagination.endItem} of{" "}
+                    {pagination.totalItems}.
+                  </p>
+                  <PullRequestTable pullRequests={pagination.items} />
+                  <PaginationControls
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    getPageHref={getPageHref}
+                  />
+                </article>
+              );
+            })}
           </section>
         )}
 
         {dashboardData && tabMode === "repos" && (
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold">All Repositories</h2>
-            <RepositoryTable repositories={repositoryPagination.items} />
-            <PaginationControls
-              currentPage={repositoryPagination.currentPage}
-              totalPages={repositoryPagination.totalPages}
-              getPageHref={activePageHref}
-            />
+          <section className="flex flex-col gap-6">
+            <h2 className="text-lg font-semibold">Repositories by Organization</h2>
+            {groupedRepositoryEntries.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
+                No repositories found for configured accounts.
+              </div>
+            )}
+
+            {groupedRepositoryEntries.map(([organization, repositories]) => {
+              const pageParamKey = getGroupPageParamKey("repo", organization);
+              const pagination = paginate(
+                repositories,
+                getPageNumber(flatSearchParams[pageParamKey]),
+                ITEMS_PER_PAGE,
+              );
+              const getPageHref = (page: number) =>
+                buildHref({
+                  tab: "repos",
+                  view: undefined,
+                  sort: undefined,
+                  page: undefined,
+                  [pageParamKey]: page > 1 ? String(page) : undefined,
+                });
+
+              return (
+                <article
+                  key={organization}
+                  className="flex flex-col gap-3 rounded-2xl"
+                >
+                  <h3 className="text-lg font-semibold">
+                    {organization}{" "}
+                    <span className="text-sm font-normal text-slate-500">
+                      ({pagination.totalItems})
+                    </span>
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    Showing {pagination.startItem}-{pagination.endItem} of{" "}
+                    {pagination.totalItems}.
+                  </p>
+                  <RepositoryTable repositories={pagination.items} />
+                  <PaginationControls
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    getPageHref={getPageHref}
+                  />
+                </article>
+              );
+            })}
           </section>
         )}
       </div>

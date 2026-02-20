@@ -12,6 +12,7 @@ GitHub organizations and multiple PATs.
   - Repositories
 - Pagination:
   - 10 items per page
+  - Per-organization pagination for grouped views
 - PR views:
   - All PRs
   - Grouped by organization
