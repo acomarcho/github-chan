@@ -55,7 +55,7 @@ function getSortMode(value: string | undefined): SortMode {
 }
 
 function getViewMode(value: string | undefined): ViewMode {
-  return value === "org" ? "org" : "all";
+  return value === "all" ? "all" : "org";
 }
 
 function getTabMode(value: string | undefined): TabMode {
@@ -486,17 +486,6 @@ export default async function Home({ searchParams }: HomePageProps) {
                 <LinkPill
                   href={buildHref({
                     tab: "pulls",
-                    view: "all",
-                    sort: sortMode,
-                    page: undefined,
-                  })}
-                  active={viewMode === "all"}
-                >
-                  All PRs
-                </LinkPill>
-                <LinkPill
-                  href={buildHref({
-                    tab: "pulls",
                     view: "org",
                     sort: sortMode,
                     page: undefined,
@@ -504,6 +493,17 @@ export default async function Home({ searchParams }: HomePageProps) {
                   active={viewMode === "org"}
                 >
                   Grouped by Org
+                </LinkPill>
+                <LinkPill
+                  href={buildHref({
+                    tab: "pulls",
+                    view: "all",
+                    sort: sortMode,
+                    page: undefined,
+                  })}
+                  active={viewMode === "all"}
+                >
+                  All PRs
                 </LinkPill>
 
                 <span className="ml-4 text-xs uppercase tracking-wide text-slate-500">

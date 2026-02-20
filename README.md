@@ -1,11 +1,11 @@
 # GitHub Open PR Dashboard
 
 Simple Next.js dashboard that lists all open pull requests across multiple
-GitHub organizations and multiple PATs.
+GitHub organizations and multiple tokens.
 
 ## Features
 
-- Multi-account support (multiple PAT tokens)
+- Multi-account support (multiple GitHub tokens)
 - Organization-level filtering through config
 - Two tabs:
   - Pull Requests
@@ -31,9 +31,14 @@ cp .env.example .env.local
 Set token values in `.env.local`:
 
 ```bash
-GITHUB_TOKEN_A=ghp_xxx
-GITHUB_TOKEN_B=ghp_yyy
+GITHUB_TOKEN_A=gho_xxx
+GITHUB_TOKEN_B=gho_yyy
 ```
+
+Preferred token type:
+
+- `gho_...` (GitHub CLI OAuth token) is the recommended default.
+- `ghp_...` (Personal Access Token) also works.
 
 ## 2) Configure accounts/orgs
 
@@ -80,5 +85,5 @@ Open `http://localhost:3000`.
 
 ## Token permissions
 
-Your PAT needs read access to repositories and pull requests for the target orgs.
-If org SSO is enabled, authorize the token for that org.
+Your token needs read access to repositories and pull requests for the target
+orgs. If org SSO is enabled, authorize the token for that org.
