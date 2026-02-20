@@ -7,10 +7,13 @@ GitHub organizations and multiple PATs.
 
 - Multi-account support (multiple PAT tokens)
 - Organization-level filtering through config
-- Two views:
+- Two tabs:
+  - Pull Requests
+  - Repositories
+- PR views:
   - All PRs
   - Grouped by organization
-- Sort by:
+- PR sort:
   - Newest
   - Oldest
 

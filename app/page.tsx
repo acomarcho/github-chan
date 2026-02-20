@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import {
   type DashboardPullRequest,
+  type DashboardRepository,
   fetchDashboardPullRequests,
 } from "@/lib/github-prs";
 
@@ -9,10 +10,12 @@ export const dynamic = "force-dynamic";
 
 type SortMode = "newest" | "oldest";
 type ViewMode = "all" | "org";
+type TabMode = "pulls" | "repos";
 
 type PageSearchParams = {
   sort?: string;
   view?: string;
+  tab?: string;
 };
 
 type HomePageProps = {
@@ -27,6 +30,10 @@ function getViewMode(value: string | undefined): ViewMode {
   return value === "org" ? "org" : "all";
 }
 
+function getTabMode(value: string | undefined): TabMode {
+  return value === "pulls" ? "pulls" : "repos";
+}
+
 function sortPullRequests(
   pullRequests: DashboardPullRequest[],
   sortMode: SortMode,
@@ -35,6 +42,21 @@ function sortPullRequests(
     const left = Date.parse(a.createdAt);
     const right = Date.parse(b.createdAt);
     return sortMode === "oldest" ? left - right : right - left;
+  });
+}
+
+function sortRepositories(
+  repositories: DashboardRepository[],
+): DashboardRepository[] {
+  return [...repositories].toSorted((a, b) => {
+    const left = Date.parse(a.updatedAt);
+    const right = Date.parse(b.updatedAt);
+
+    if (left !== right) {
+      return right - left;
+    }
+
+    return a.fullName.localeCompare(b.fullName);
   });
 }
 
@@ -162,10 +184,75 @@ function PullRequestTable({
   );
 }
 
+function RepositoryTable({
+  repositories,
+}: {
+  repositories: DashboardRepository[];
+}) {
+  if (repositories.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
+        No repositories found for configured accounts.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+        <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
+          <tr>
+            <th className="px-4 py-3">Repository</th>
+            <th className="px-4 py-3">Organization</th>
+            <th className="px-4 py-3">Visibility</th>
+            <th className="px-4 py-3">Archived</th>
+            <th className="px-4 py-3">Open PRs</th>
+            <th className="px-4 py-3">Open Issues</th>
+            <th className="px-4 py-3">Updated</th>
+            <th className="px-4 py-3">Accounts</th>
+          </tr>
+        </thead>
+        <tbody>
+          {repositories.map((repository) => (
+            <tr key={repository.id} className="border-t border-slate-100">
+              <td className="px-4 py-3">
+                <a
+                  href={repository.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-slate-900 hover:underline"
+                >
+                  {repository.fullName}
+                </a>
+              </td>
+              <td className="px-4 py-3 text-slate-700">{repository.organization}</td>
+              <td className="px-4 py-3 text-slate-700">{repository.visibility}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {repository.archived ? "yes" : "no"}
+              </td>
+              <td className="px-4 py-3 text-slate-700">
+                {repository.openPullRequestCount}
+              </td>
+              <td className="px-4 py-3 text-slate-700">{repository.openIssuesCount}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {formatDate(repository.updatedAt)}
+              </td>
+              <td className="px-4 py-3 text-slate-700">
+                {repository.accounts.join(", ")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default async function Home({ searchParams }: HomePageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const sortMode = getSortMode(resolvedSearchParams.sort);
   const viewMode = getViewMode(resolvedSearchParams.view);
+  const tabMode = getTabMode(resolvedSearchParams.tab);
 
   let dashboardData:
     | Awaited<ReturnType<typeof fetchDashboardPullRequests>>
@@ -181,6 +268,10 @@ export default async function Home({ searchParams }: HomePageProps) {
   const sortedPullRequests = dashboardData
     ? sortPullRequests(dashboardData.pullRequests, sortMode)
     : [];
+  const sortedRepositories = dashboardData
+    ? sortRepositories(dashboardData.repositories)
+    : [];
+
   const grouped = groupByOrganization(sortedPullRequests);
   const groupedEntries = Object.entries(grouped).toSorted((a, b) =>
     a[0].localeCompare(b[0]),
@@ -194,45 +285,66 @@ export default async function Home({ searchParams }: HomePageProps) {
             GitHub Open PR Dashboard
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Open pull requests across configured organizations.
+            Open pull requests and repositories across configured organizations.
           </p>
+
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-xs uppercase tracking-wide text-slate-500">
-              View
+              Tab
             </span>
-            <LinkPill
-              href={`/?view=all&sort=${sortMode}`}
-              active={viewMode === "all"}
-            >
-              All PRs
+            <LinkPill href="/?tab=repos" active={tabMode === "repos"}>
+              Repositories
             </LinkPill>
             <LinkPill
-              href={`/?view=org&sort=${sortMode}`}
-              active={viewMode === "org"}
+              href={`/?tab=pulls&view=${viewMode}&sort=${sortMode}`}
+              active={tabMode === "pulls"}
             >
-              Grouped by Org
+              Pull Requests
             </LinkPill>
-            <span className="ml-4 text-xs uppercase tracking-wide text-slate-500">
-              Sort
-            </span>
-            <LinkPill
-              href={`/?view=${viewMode}&sort=newest`}
-              active={sortMode === "newest"}
-            >
-              Newest
-            </LinkPill>
-            <LinkPill
-              href={`/?view=${viewMode}&sort=oldest`}
-              active={sortMode === "oldest"}
-            >
-              Oldest
-            </LinkPill>
+
+            {tabMode === "pulls" && (
+              <>
+                <span className="ml-4 text-xs uppercase tracking-wide text-slate-500">
+                  View
+                </span>
+                <LinkPill
+                  href={`/?tab=pulls&view=all&sort=${sortMode}`}
+                  active={viewMode === "all"}
+                >
+                  All PRs
+                </LinkPill>
+                <LinkPill
+                  href={`/?tab=pulls&view=org&sort=${sortMode}`}
+                  active={viewMode === "org"}
+                >
+                  Grouped by Org
+                </LinkPill>
+
+                <span className="ml-4 text-xs uppercase tracking-wide text-slate-500">
+                  Sort
+                </span>
+                <LinkPill
+                  href={`/?tab=pulls&view=${viewMode}&sort=newest`}
+                  active={sortMode === "newest"}
+                >
+                  Newest
+                </LinkPill>
+                <LinkPill
+                  href={`/?tab=pulls&view=${viewMode}&sort=oldest`}
+                  active={sortMode === "oldest"}
+                >
+                  Oldest
+                </LinkPill>
+              </>
+            )}
           </div>
+
           {dashboardData && (
             <div className="mt-4 text-sm text-slate-600">
               <p>
-                Loaded <strong>{sortedPullRequests.length}</strong> open PRs
-                from config <code>{dashboardData.configPath}</code>.
+                Loaded <strong>{sortedRepositories.length}</strong> repositories
+                and <strong> {sortedPullRequests.length}</strong> open PRs from
+                config <code>{dashboardData.configPath}</code>.
               </p>
             </div>
           )}
@@ -243,8 +355,8 @@ export default async function Home({ searchParams }: HomePageProps) {
             <p className="font-semibold">Failed to load dashboard</p>
             <p className="mt-1">{loadError}</p>
             <p className="mt-3">
-              Create <code>github-dashboard.yml</code> and set the referenced
-              token env vars.
+              Check your PAT permissions, organization policies, and
+              <code> github-dashboard.yml</code> config.
             </p>
           </section>
         )}
@@ -260,14 +372,14 @@ export default async function Home({ searchParams }: HomePageProps) {
           </section>
         )}
 
-        {dashboardData && viewMode === "all" && (
+        {dashboardData && tabMode === "pulls" && viewMode === "all" && (
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold">All Open Pull Requests</h2>
             <PullRequestTable pullRequests={sortedPullRequests} />
           </section>
         )}
 
-        {dashboardData && viewMode === "org" && (
+        {dashboardData && tabMode === "pulls" && viewMode === "org" && (
           <section className="flex flex-col gap-6">
             {groupedEntries.length === 0 && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-500">
@@ -289,6 +401,13 @@ export default async function Home({ searchParams }: HomePageProps) {
                 <PullRequestTable pullRequests={pullRequests} />
               </article>
             ))}
+          </section>
+        )}
+
+        {dashboardData && tabMode === "repos" && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold">All Repositories</h2>
+            <RepositoryTable repositories={sortedRepositories} />
           </section>
         )}
       </div>
