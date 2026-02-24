@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -359,6 +359,7 @@ export default function DashboardClient({
   const [pullOrgPages, setPullOrgPages] = useState<Record<string, number>>({});
   const [repoOrgPages, setRepoOrgPages] = useState<Record<string, number>>({});
   const [isPending, startTransition] = useTransition();
+  const lastSyncedSearchRef = useRef<string | null>(null);
 
   const sortedPullRequests = useMemo(
     () => (dashboardData ? sortPullRequests(dashboardData.pullRequests, sortMode) : []),
@@ -389,13 +390,18 @@ export default function DashboardClient({
   const refreshData = () => withTransition(() => router.refresh());
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const currentSearch = searchParams.toString();
+    const params = new URLSearchParams(searchParams);
     params.set("tab", tabMode);
     params.set("view", viewMode);
     params.set("sort", sortMode);
     const nextSearch = params.toString();
 
-    if (nextSearch !== searchParams.toString()) {
+    if (
+      nextSearch !== currentSearch &&
+      lastSyncedSearchRef.current !== nextSearch
+    ) {
+      lastSyncedSearchRef.current = nextSearch;
       router.replace(`${pathname}?${nextSearch}`, { scroll: false });
     }
   }, [pathname, router, searchParams, sortMode, tabMode, viewMode]);
