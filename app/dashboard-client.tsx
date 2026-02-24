@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   type DashboardPullRequest,
@@ -128,6 +129,18 @@ function formatDate(isoDate: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(isoDate));
+}
+
+function parseTabMode(value: string | null): TabMode | null {
+  return value === "pulls" || value === "repos" ? value : null;
+}
+
+function parseViewMode(value: string | null): ViewMode | null {
+  return value === "all" || value === "org" ? value : null;
+}
+
+function parseSortMode(value: string | null): SortMode | null {
+  return value === "newest" || value === "oldest" ? value : null;
 }
 
 function ButtonPill({
@@ -330,9 +343,18 @@ export default function DashboardClient({
   dashboardData,
   loadError,
 }: DashboardClientProps) {
-  const [tabMode, setTabMode] = useState<TabMode>("repos");
-  const [viewMode, setViewMode] = useState<ViewMode>("org");
-  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [tabMode, setTabMode] = useState<TabMode>(
+    () => parseTabMode(searchParams.get("tab")) ?? "repos",
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    () => parseViewMode(searchParams.get("view")) ?? "org",
+  );
+  const [sortMode, setSortMode] = useState<SortMode>(
+    () => parseSortMode(searchParams.get("sort")) ?? "newest",
+  );
   const [allPullPage, setAllPullPage] = useState(1);
   const [pullOrgPages, setPullOrgPages] = useState<Record<string, number>>({});
   const [repoOrgPages, setRepoOrgPages] = useState<Record<string, number>>({});
@@ -364,6 +386,19 @@ export default function DashboardClient({
   const allPullPagination = paginate(sortedPullRequests, allPullPage, ITEMS_PER_PAGE);
 
   const withTransition = (fn: () => void) => startTransition(fn);
+  const refreshData = () => withTransition(() => router.refresh());
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tabMode);
+    params.set("view", viewMode);
+    params.set("sort", sortMode);
+    const nextSearch = params.toString();
+
+    if (nextSearch !== searchParams.toString()) {
+      router.replace(`${pathname}?${nextSearch}`, { scroll: false });
+    }
+  }, [pathname, router, searchParams, sortMode, tabMode, viewMode]);
 
   const switchTab = (nextTab: TabMode) =>
     withTransition(() => {
@@ -440,6 +475,9 @@ export default function DashboardClient({
             </ButtonPill>
             <ButtonPill active={tabMode === "pulls"} onClick={() => switchTab("pulls")}>
               Pull Requests
+            </ButtonPill>
+            <ButtonPill active={false} onClick={refreshData}>
+              Refresh
             </ButtonPill>
 
             {tabMode === "pulls" && (
